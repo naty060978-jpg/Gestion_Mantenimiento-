@@ -1,0 +1,167 @@
+!pip install reportlab pillow
+
+import json
+import os
+from datetime import datetime
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+from google.colab import files
+from PIL import Image
+
+# 1. EL MOLDE DEL EQUIPO
+class AireAcondicionado:
+    def __init__(self, sector, marca, modelo, n_serie, tipo, frigorias, refrigerante, cantidad_gas, consumo, fecha):
+        self.sector = sector
+        self.marca = marca
+        self.modelo = modelo
+        self.n_serie = n_serie
+        self.tipo = tipo
+        self.frigorias = frigorias
+        self.refrigerante = refrigerante
+        self.cantidad_gas = cantidad_gas
+        self.consumo = consumo
+        self.fecha = fecha
+        self.filtros = ""
+        self.presion = ""
+        self.condensadora = ""
+        self.drenaje = ""
+        self.observaciones = ""
+        self.ruta_foto = None
+
+# 2. LÓGICA DEL SISTEMA
+class SistemaGestionMantenimiento:
+    def __init__(self):
+        self.lista_equipos = []
+        self.archivo_datos = "clientes_mantenimiento.json"
+        self.base_datos = self.cargar_datos()
+        self.empresa_mantenedora = ""
+
+    def cargar_datos(self):
+        if os.path.exists(self.archivo_datos):
+            try:
+                with open(self.archivo_datos, "r") as f:
+                    return json.load(f)
+            except: return {}
+        return {}
+
+    def guardar_datos(self, cliente, sitio, direccion):
+        equipos_para_guardar = []
+        for eq in self.lista_equipos:
+            d = vars(eq).copy()
+            d['ruta_foto'] = None
+            equipos_para_guardar.append(d)
+        self.base_datos[cliente] = {"sitio": sitio, "direccion": direccion, "equipos": equipos_para_guardar}
+        with open(self.archivo_datos, "w") as f:
+            json.dump(self.base_datos, f, indent=4)
+
+    def seleccionar_tipo(self):
+        opciones = ["Split Pared", "Baja Silueta", "Cassette", "Piso-Techo", "Rooftop", "MultiSplit", "Otro"]
+        print("\n--- SELECCIONE TIPO DE EQUIPO ---")
+        for i, opt in enumerate(opciones, 1): print(f"{i}. {opt}")
+        while True:
+            eleccion = input("Seleccione el número de tipo (1-7): ")
+            if eleccion.isdigit() and 1 <= int(eleccion) <= len(opciones): return opciones[int(eleccion)-1]
+            print("❌ Error: Elija un número válido.")
+
+    def generar_pdf(self, cliente, sitio, direccion):
+        nombre_pdf = f"Reporte_{cliente}_{sitio}.pdf".replace(" ", "_")
+        c = canvas.Canvas(nombre_pdf, pagesize=letter)
+        y = 750
+
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(50, y, self.empresa_mantenedora.upper())
+        c.setFont("Helvetica", 10)
+        c.drawString(450, y, f"Fecha: {datetime.now().strftime('%d/%m/%Y')}")
+        y -= 25
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y, "REPORTE TÉCNICO DE MANTENIMIENTO")
+        y -= 20
+        c.setFont("Helvetica", 11)
+        c.drawString(50, y, f"CLIENTE: {cliente} | SITIO: {sitio}")
+        y -= 15
+        c.drawString(50, y, f"DIRECCIÓN: {direccion}")
+        c.line(50, y-10, 550, y-10)
+        y -= 40
+
+        for eq in self.lista_equipos:
+            if y < 200:
+                c.showPage()
+                y = 750
+
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(50, y, f"SECTOR: {eq.sector} | TIPO: {eq.tipo}")
+            y -= 15
+            c.setFont("Helvetica", 10)
+            c.drawString(60, y, f"Marca/Modelo: {eq.marca} {eq.modelo} | S/N: {eq.n_serie}")
+            y -= 15
+            c.drawString(60, y, f"Técnico: {eq.frigorias} fg | Gas: {eq.refrigerante} | Consumo: {eq.consumo}")
+            y -= 15
+            c.setFont("Helvetica-Oblique", 10)
+            c.drawString(60, y, f"ESTADO: Filtros: {eq.filtros} | Presión: {eq.presion} PSI | Drenaje: {eq.drenaje}")
+            y -= 15
+            c.drawString(60, y, f"OBSERVACIONES: {eq.observaciones}")
+            y -= 10
+
+            if eq.ruta_foto and os.path.exists(eq.ruta_foto):
+                try:
+                    img = ImageReader(eq.ruta_foto)
+                    c.drawImage(img, 60, y - 150, width=200, height=150, preserveAspectRatio=True)
+                    y -= 160
+                except:
+                    y -= 10
+
+            y -= 10
+            c.line(50, y, 300, y)
+            y -= 30
+
+        c.save()
+        return nombre_pdf
+
+    def completar_mantenimiento(self, eq):
+        print(f"\n--- Checklist Mantenimiento: {eq.sector} ---")
+        eq.filtros = "OK" if input("- ¿Filtros limpios? (s/n): ").lower() == "s" else "SUCIOS"
+        eq.presion = input("- Presión de refrigerante (PSI): ")
+        eq.condensadora = "OK" if input("- ¿Condensadora limpia? (s/n): ").lower() == "s" else "SUCIA"
+        eq.drenaje = "OK" if input("- ¿Drenaje despejado? (s/n): ").lower() == "s" else "OBSTRUIDO"
+        eq.observaciones = input("- Observaciones generales: ")
+
+        if input("- ¿Desea adjuntar una foto? (s/n): ").lower() == "s":
+            print("Seleccione la imagen...")
+            subida = files.upload()
+            for nombre in subida.keys():
+                eq.ruta_foto = nombre # Guardamos el nombre tal cual viene de Colab
+
+    def iniciar_programa(self):
+        print("=== SISTEMA DE GESTIÓN DE MANTENIMIENTO ===")
+        self.empresa_mantenedora = input("Nombre de la Empresa Mantenedora: ").strip() or "Empresa"
+        cliente = input("Nombre del Cliente: ").strip()
+        sitio = input("Sitio/Edificio: ")
+        direccion = input("Dirección: ")
+
+        if cliente in self.base_datos:
+            print(f"✅ Cliente '{cliente}' encontrado.")
+            if input("¿Usar equipos guardados? (s/n): ").lower() == "s":
+                for data in self.base_datos[cliente]['equipos']:
+                    eq = AireAcondicionado(data['sector'], data['marca'], data['modelo'], data['n_serie'], data['tipo'], data['frigorias'], data['refrigerante'], data.get('cantidad_gas','N/A'), data.get('consumo','N/A'), datetime.now().strftime('%d/%m/%Y'))
+                    self.completar_mantenimiento(eq)
+                    self.lista_equipos.append(eq)
+                self.finalizar(cliente, sitio, direccion)
+                return
+
+        while True:
+            tipo_eq = self.seleccionar_tipo()
+            eq = AireAcondicionado(input("Sector: "), input("Marca: "), input("Modelo: "), input("S/N: "), tipo_eq, input("Frigorías: "), input("Gas: "), input("Gramos: "), input("Consumo: "), datetime.now().strftime('%d/%m/%Y'))
+            self.completar_mantenimiento(eq)
+            self.lista_equipos.append(eq)
+            if input("\n¿Añadir otro equipo? (s/n): ").lower() != 's': break
+
+        self.finalizar(cliente, sitio, direccion)
+
+    def finalizar(self, cliente, sitio, direccion):
+        self.guardar_datos(cliente, sitio, direccion)
+        pdf = self.generar_pdf(cliente, sitio, direccion)
+        files.download(pdf)
+
+app = SistemaGestionMantenimiento()
+app.iniciar_programa()
