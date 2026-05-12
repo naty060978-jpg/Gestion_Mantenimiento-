@@ -1,3 +1,5 @@
+#ESTA ES LA VERSION INICIAL , DE ESTE PUNTO DE PARTIDA FUIMOS HACIENDO CAMBIOS
+
 !pip install reportlab pillow
 
 import json
